@@ -717,14 +717,19 @@ unsafe fn range_file(image: &[u8], rva: Rva, min_size_of: usize) -> Result<&[u8]
 #[inline(never)]
 unsafe fn slice_file(image: &[u8], rva: Rva, min_size_of: usize, align_of: usize) -> Result<&[u8]> {
 	if rva == 0 {
-		Err(Error::Null)
+		return Err(Error::Null);
 	}
-	else if !usize::wrapping_add(image.as_ptr() as usize, rva as usize).aligned_to(align_of) {
-		Err(Error::Misaligned)
+	// Alignment must be checked against the ACTUAL data pointer, not image_base + rva.
+	// Under file alignment the bytes for `rva` live at PointerToRawData + (rva -
+	// VirtualAddress), which generally differs from `rva` modulo align_of. Checking
+	// `rva` here let a misaligned pointer through, and the subsequent `&*ptr as *const T`
+	// in derva_slice*/derva was then a misaligned reference — UB that aborts under
+	// debug alignment checks. Range the file first, then check the real pointer.
+	let bytes = range_file(image, rva, min_size_of)?;
+	if !(bytes.as_ptr() as usize).aligned_to(align_of) {
+		return Err(Error::Misaligned);
 	}
-	else {
-		range_file(image, rva, min_size_of)
-	}
+	Ok(bytes)
 }
 #[inline(never)]
 unsafe fn read_file(image: &[u8], image_base: Va, va: Va, min_size_of: usize, align_of: usize) -> Result<&[u8]> {
