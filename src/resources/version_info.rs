@@ -177,8 +177,14 @@ impl<'a> VersionInfo<'a> {
 			let fixed = match mem::size_of_val(version_info.value) {
 				0 => None,
 				VS_FIXEDFILEINFO_SIZEOF => {
-					let value = unsafe { &*(version_info.value.as_ptr() as *const VS_FIXEDFILEINFO) };
-					Some(value)
+					let ptr = version_info.value.as_ptr() as *const VS_FIXEDFILEINFO;
+					// Skip a misaligned fixed-file-info rather than form a misaligned
+					// reference (UB). visit() already contracts to skip corrupted data.
+					if ptr.aligned_to(mem::align_of::<VS_FIXEDFILEINFO>()) {
+						Some(unsafe { &*ptr })
+					} else {
+						None
+					}
 				},
 				_ => None,
 			};
@@ -652,8 +658,12 @@ fn test_parse_tlv_oob() {
 
 #[test]
 fn test_parse_254() {
+	// 4-byte alignment: real version resources are DWORD-aligned; a bare
+	// [u16] static may land 2-aligned, which the parser now correctly skips.
+	#[repr(align(4))]
+	struct Aligned([u16; 397]);
 	#[rustfmt::skip]
-	static WORDS: [u16; 397] = [
+	static WORDS: Aligned = Aligned([
 		794, 52, 0, 86, 83, 95, 86, 69, 82, 83, 73, 79, 78, 95, 73, 78,
 		70, 79, 0, 0, 1213, 65263, 0, 1, 607, 22, 25, 2013, 607, 22, 25, 2013,
 		63, 0, 0, 0, 4, 0, 2, 0, 0, 0, 0, 0, 0, 0, 68, 0,
@@ -679,9 +689,9 @@ fn test_parse_254() {
 		46, 50, 48, 49, 51, 46, 50, 53, 0, 0, 70, 15, 1, 65, 115, 115,
 		101, 109, 98, 108, 121, 32, 86, 101, 114, 115, 105, 111, 110, 0, 50, 50,
 		46, 54, 48, 55, 46, 50, 48, 49, 51, 46, 50, 53, 0,
-	];
+	]);
 
-	let vi = VersionInfo { words: &WORDS };
+	let vi = VersionInfo { words: &WORDS.0 };
 	let fi = vi.file_info();
 	assert!(fi.fixed.is_some());
 
