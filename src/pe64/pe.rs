@@ -785,6 +785,14 @@ pub(crate) fn validate_headers(image: &[u8]) -> Result<u32> {
 	if nt_end > image.len() {
 		return Err(Error::Bounds);
 	}
+	// The NT headers are accessed by reference here and throughout the parser, so
+	// the pointer must satisfy their alignment (8 for PE32+, due to u64 fields).
+	// Windows tolerates 4-byte-aligned headers via unaligned reads; pelite forms
+	// real references, so reject a misaligned header rather than dereference it —
+	// a misaligned reference is UB and aborts under debug alignment checks.
+	if !image.as_ptr().wrapping_offset(dos.e_lfanew as isize).aligned_to(mem::align_of::<IMAGE_NT_HEADERS>()) {
+		return Err(Error::Misaligned);
+	}
 	let nt = unsafe { &*(image.as_ptr().offset(dos.e_lfanew as isize) as *const IMAGE_NT_HEADERS) };
 	// Verify the NT headers
 	if nt.Signature != IMAGE_NT_HEADERS_SIGNATURE || !(nt.OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC || nt.OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
