@@ -64,6 +64,10 @@ pub mod rich_structure;
 pub mod security;
 pub mod strings;
 
-// FIXME! Causes STATUS_STACK_BUFFER_OVERRUN in CI on nightly x86_64-pc-windows-msvc
-// #[cfg(test)]
-// mod tests;
+// The PoC corpus test (upstream #290). Upstream left it disabled after it hit a
+// STATUS_STACK_BUFFER_OVERRUN on nightly x86_64-pc-windows-msvc; that class of
+// crash came from misaligned reference formation, fixed in this fork (see the
+// slice_file / validate_headers commits), so it is re-enabled here as a
+// malformed-input regression harness.
+#[cfg(test)]
+mod tests;
